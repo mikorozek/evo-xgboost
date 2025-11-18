@@ -1,0 +1,8 @@
+[project]
+name = "evo-xgboost"
+version = "0.1.0"
+dependencies = [
+    "xgboost",
+    "pandas",
+    "scikit-learn",
+]
