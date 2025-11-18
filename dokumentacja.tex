@@ -1,0 +1,104 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\geometry{a4paper, margin=1in}
+
+\title{Dokumentacja Projektu\\ \large Optymalizacja Hiperparametrów XGBoost przy użyciu Algorytmu Ewolucyjnego}
+\author{Mikołaj Rożek, Maksymilian Bilski}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Wprowadzenie}
+Celem projektu jest znalezienie optymalnego zestawu hiperparametrów dla modelu klasyfikacyjnego XGBoost (Extreme Gradient Boosting) w celu maksymalizacji jego skuteczności. Jako problem testowy wykorzystany zostanie zbiór danych Titanic, dostępny na platformie Kaggle: \href{https://www.kaggle.com/datasets/yasserh/titanic-dataset}{Titanic Dataset}.
+
+Do rozwiązania problemu optymalizacji zostanie wykorzystany algorytm ewolucyjny, który będzie przeszukiwał przestrzeń możliwych hiperparametrów w sposób inspirowany ewolucją biologiczną.
+
+\section{Proponowana Metodologia}
+Poniżej opisane zostaną kluczowe komponenty implementowanego algorytmu ewolucyjnego.
+
+\subsection{Osobnik populacji}
+Pojedynczy osobnik w populacji będzie reprezentował kompletny zestaw hiperparametrów dla modelu XGBoost. Każda cecha osobnika będzie odpowiadała jednemu hiperparametrowi. Optymalizowane parametry to:
+\begin{itemize}
+    \item \textbf{eta (learning rate):} Szybkość uczenia modelu.
+    \item \textbf{max\_depth:} Maksymalna głębokość drzewa decyzyjnego.
+    \item \textbf{subsample:} Frakcja próbek uczących używana do trenowania każdego drzewa.
+    \item \textbf{colsample\_bytree:} Frakcja cech (kolumn) używana przy budowie każdego drzewa.
+    \item \textbf{min\_child\_weight:} Minimalna suma wag instancji potrzebna w węźle liścia.
+    \item \textbf{gamma:} Minimalna redukcja funkcji straty wymagana do wykonania podziału.
+    \item \textbf{n\_estimators:} Liczba drzew w modelu.
+\end{itemize}
+Każdy z tych parametrów będzie miał zdefiniowany zakres wartości (dyskretnych lub ciągłych), w obrębie którego będzie mógł być modyfikowany.
+
+\subsection{Populacja Początkowa}
+Algorytm rozpocznie działanie od stworzenia populacji początkowej, składającej się z ustalonej liczby losowych osobników. Wartości poszczególnych hiperparametrów dla każdego osobnika zostaną wylosowane niezależnie z ich predefiniowanych zakresów.
+
+\subsection{Funkcja Oceny (Fitness)}
+Jakość każdego osobnika w populacji będzie mierzona za pomocą funkcji oceny, nazywanej również funkcją fitness. W tym projekcie proces oceny będzie przebiegał następująco:
+\begin{enumerate}
+    \item Zestaw danych zostanie podzielony na zbiór treningowy i testowy.
+    \item Model XGBoost będzie trenowany na zbiorze treningowym przy użyciu hiperparametrów z ocenianego osobnika.
+    \item Jakość wytrenowanego modelu zostanie ewaluowana na zbiorze testowym za pomocą metryki \textbf{F1-score}.
+\end{enumerate}
+Wartość F1-score, będąca średnią harmoniczną precyzji i czułości, będzie stanowić wartość funkcji fitness danego osobnika. Wyższa wartość będzie oznaczać lepsze przystosowanie.
+
+\subsection{Selekcja}
+W celu wyłonienia osobników do reprodukcji, będzie tworzona \textbf{pula rodzicielska} (ang. mating pool) za pomocą \textbf{selekcji turniejowej (Tournament Selection)}. Proces ten będzie przebiegał następująco: aby wybrać pojedynczego rodzica do puli, z aktualnej populacji zostaną wylosowani `k` osobników (gdzie `k` to rozmiar turnieju). Ten z nich, który ma najwyższą wartość funkcji fitness, wygra turniej i zostanie dodany do puli rodzicielskiej. Operacja ta będzie powtarzana, aż pula rodzicielska osiągnie rozmiar równy rozmiarowi populacji. Taki mechanizm sprawi, że silniejsze osobniki będą miały statystycznie większą szansę na wielokrotne skopiowanie do puli rodzicielskiej.
+
+\subsection{Operatory Ewolucyjne}
+Nowe pokolenia osobników będą tworzone przy użyciu operatorów krzyżowania i mutacji.
+
+\subsubsection{Krzyżowanie (Crossover)}
+Po stworzeniu i potasowaniu puli rodzicielskiej, osobniki będą dobierane w pary. Dla każdej pary rodziców będzie podejmowana decyzja o krzyżowaniu na podstawie hiperparametru \texttt{crossover\_prob}.
+\begin{itemize}
+    \item Jeśli krzyżowanie będzie zachodzić (z prawdopodobieństwem \texttt{crossover\_prob}), para rodziców stworzy \textbf{dwóch nowych osobników potomnych}, którzy trafią do populacji następnej generacji. Potomkowie odziedziczą cechy po rodzicach, np. poprzez losowy wybór cechy od jednego z rodziców dla każdego hiperparametru (krzyżowanie jednorodne).
+    \item Jeśli krzyżowanie nie będzie zachodzić, obaj rodzice zostaną \textbf{bezpośrednio skopiowani} do populacji następnej generacji.
+\end{itemize}
+Taki mechanizm zagwarantuje, że rozmiar populacji pozostanie stały w każdym pokoleniu.
+
+\subsubsection{Mutacja (Mutation)}
+Każda cecha (hiperparametr) w każdym osobniku nowej populacji będzie miała szansę na mutację, określoną przez parametr \texttt{mutation\_prob}. Jeśli dana cecha zostanie wylosowana do mutacji, sposób modyfikacji jej wartości będzie zależał od jej typu (ciągły lub dyskretny):
+\begin{itemize}
+    \item \textbf{Dla parametrów ciągłych} (np. \texttt{eta}, \texttt{gamma}): Wartość cechy zostanie zmodyfikowana o niewielką, losową wartość z rozkładu normalnego. Nowa wartość zostanie następnie sprawdzona i ewentualnie przycięta, aby mieściła się w predefiniowanym, dopuszczalnym zakresie.
+    \item \textbf{Dla parametrów dyskretnych} (np. \texttt{max\_depth}): Zastosowana zostanie mutacja pełzająca (creep mutation). Do obecnej wartości cechy zostanie dodana losowa wartość z rozkładu normalnego, a wynik zostanie \textbf{zaokrąglony do najbliższej liczby całkowitej}. Podobnie jak w przypadku parametrów ciągłych, finalna wartość zostanie sprawdzona, aby nie wykraczała poza swój dopuszczalny zakres.
+\end{itemize}
+Takie zróżnicowane podejście gwarantuje, że zmutowane wartości hiperparametrów będą zawsze poprawne i dopasowane do ich natury, a jednocześnie wprowadzi nową informację do populacji, co pozwoli na eksplorację nowych obszarów przestrzeni rozwiązań.
+
+\subsection{Sukcesja}
+Ostatnim krokiem w każdej generacji będzie stworzenie nowej populacji na podstawie populacji rodzicielskiej i potomnej. W projekcie zostanie zastosowana strategia \textbf{sukcesji elitarnej}, która zagwarantuje, że najlepsze znalezione dotąd rozwiązania nie zostaną utracone. Proces ten, kontrolowany przez parametr \texttt{elite\_size}, będzie przebiegał następująco:
+\begin{enumerate}
+    \item \texttt{elite\_size} najlepszych osobników z populacji rodzicielskiej zostanie bezpośrednio skopiowanych do nowej populacji.
+    \item Pozostałe \texttt{population\_size - elite\_size} miejsc w nowej populacji zostanie zapełnionych przez najlepszych osobników z nowo utworzonej populacji potomnej.
+\end{enumerate}
+Dzięki temu ogólna wartość przystosowania populacji nie będzie mogła się pogorszyć z pokolenia na pokolenie pod względem najlepszego osobnika.
+
+\subsection{Parametry Algorytmu Ewolucyjnego}
+Działanie samego algorytmu ewolucyjnego będzie kontrolowane przez zestaw hiperparametrów, które będą ustalane przez użytkownika przed uruchomieniem procesu optymalizacji. Kluczowe parametry w tym projekcie to:
+\begin{itemize}
+    \item \textbf{population\_size:} Liczba osobników (zestawów hiperparametrów XGBoost) w każdej populacji.
+    \item \textbf{number\_of\_generations:} Liczba pokoleń, przez które będzie ewoluowała populacja. Definiuje to, jak długo będzie działał algorytm.
+    \item \textbf{crossover\_prob:} Prawdopodobieństwo (wartość od 0.0 do 1.0), z jakim para rodziców zostanie poddana operacji krzyżowania w celu stworzenia potomstwa.
+    \item \textbf{mutation\_prob:} Prawdopodobieństwo (wartość od 0.0 do 1.0), z jakim każda pojedyncza cecha (hiperparametr) w osobniku potomnym ulegnie mutacji.
+    \item \textbf{tournament\_size:} Liczba osobników biorących udział w pojedynczym turnieju podczas selekcji turniejowej.
+    \item \textbf{elite\_size:} Liczba najlepszych osobników z populacji rodzicielskiej, która zostanie bezpośrednio skopiowana do następnego pokolenia.
+\end{itemize}
+
+\section{Proces Ewolucji i Ewaluacja}
+Algorytm będzie przebiegał iteracyjnie przez zadaną liczbę pokoleń. W każdej iteracji (pokoleniu) będą wykonywane następujące kroki:
+\begin{enumerate}
+    \item Ocena wartości fitness każdego osobnika w bieżącej populacji.
+    \item Stworzenie populacji potomnej poprzez selekcję, krzyżowanie i mutację.
+    \item Zastosowanie sukcesji elitarnej w celu stworzenia następnego pokolenia z populacji rodzicielskiej i potomnej.
+\end{enumerate}
+W trakcie działania algorytmu będzie śledzona najwyższa wartość fitness w każdym pokoleniu. Po zakończeniu wszystkich iteracji, najlepszy znaleziony w całym procesie ewolucji osobnik (zestaw hiperparametrów) zostanie uznany za rozwiązanie problemu optymalizacji.
+
+Ostateczna skuteczność znalezionych parametrów zostanie zweryfikowana poprzez ponowne wytrenowanie modelu XGBoost na zbiorze treningowym i ocenę jego metryk (F1-score oraz Accuracy) na zbiorze testowym, który nie będzie używany w procesie ewolucji.
+
+\end{document}
